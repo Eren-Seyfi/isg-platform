@@ -2,6 +2,9 @@
 
 İş Sağlığı ve Güvenliği (İSG) Platformu, iş yerlerinde güvenlik önlemlerini artırmak, riskleri yönetmek ve hızlı aksiyon almayı sağlamak için geliştirilen bir sistemdir. Kullanıcılar, web uygulaması aracılığıyla iş yerindeki güvenlik ihlallerini QR kod tarayarak rapor edebilir.
 
+🐦 **Yayınlanmış Proje:** [isgplatformu.com.tr](https://isgplatformu.com.tr)
+
+
 ## 📌 Özellikler
 
 - 📷 **QR Kod ile Raporlama**: Kullanıcılar, çalışma alanlarında bulunan QR kodları tarayarak hızlıca rapor oluşturabilir.
