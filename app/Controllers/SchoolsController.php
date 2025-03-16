@@ -205,94 +205,106 @@ class SchoolsController extends BaseController
 
     // ============================= Bölge (Region) İşlemleri =============================
 
-    public function getRegions()
-    {
-        $settingsModel = new SettingsModel();
-        $userModel = new UserModel();
-        $unitModel = new UnitModel();
-        $structureModel = new StructureModel();
-        $regionModel = new RegionModel();
+   public function getRegions()
+{
+    $settingsModel = new SettingsModel();
+    $userModel = new UserModel();
+    $unitModel = new UnitModel();
+    $structureModel = new StructureModel();
+    $regionModel = new RegionModel();
 
-        $companyId = session()->get('company_id'); // Kullanıcının şirket ID’sini al
+    $companyId = session()->get('company_id'); // Kullanıcının şirket ID’sini al
 
-        // Şirkete ait aktif birimleri çek
-        $units = $unitModel->where('company_id', $companyId)
-            ->where('deleted_at IS NULL') // ❌ Silinmiş birimleri liste dışı bırak
-            ->findAll();
+    // Şirkete ait aktif birimleri çek
+    $units = $unitModel->where('company_id', $companyId)
+        ->where('deleted_at', null) // ✅ Silinmiş birimleri liste dışı bırak
+        ->findAll();
 
-        // Şirkete ait aktif yapıları çek
-        $structures = $structureModel->where('company_id', $companyId)
-            ->where('deleted_at IS NULL') // ❌ Silinmiş yapıları liste dışı bırak
-            ->findAll();
+    // Şirkete ait aktif yapıları çek
+    $structures = $structureModel->where('company_id', $companyId)
+        ->where('deleted_at', null) // ✅ Silinmiş yapıları liste dışı bırak
+        ->findAll();
 
-        $unitIds = array_column($units, 'id');
-        $structureIds = array_column($structures, 'id');
+    $unitIds = array_column($units, 'id');
+    $structureIds = array_column($structures, 'id');
 
-        // Birim ve Yapı adlarını ID ile eşleştir
-        $unitNames = [];
-        foreach ($units as $unit) {
-            $unitNames[$unit['id']] = $unit['name'];
-        }
-        $structureNames = [];
-        foreach ($structures as $structure) {
-            $structureNames[$structure['id']] = $structure['name'];
-        }
-
-        // GET üzerinden filtre parametrelerini al
-        $search = $this->request->getGet('search');
-        $unitFilter = $this->request->getGet('unit_filter');
-        $structureFilter = $this->request->getGet('structure_filter');
-
-        // Bölgeleri yalnızca kullanıcının şirketine ait olanlarla sınırlayarak al ve filtre uygula
-        $regionModel->whereIn('unit_id', $unitIds)
-            ->whereIn('structure_id', $structureIds)
-            ->where('deleted_at IS NULL'); // ❌ Silinmiş bölgeleri liste dışı bırak
-
-        if (!empty($unitFilter)) {
-            $regionModel->where('unit_id', $unitFilter);
-        }
-        if (!empty($structureFilter)) {
-            $regionModel->where('structure_id', $structureFilter);
-        }
-        if (!empty($search)) {
-            // Bölge ismi veya açıklaması üzerinden arama
-            $regionModel->groupStart();
-            $regionModel->like('name', $search)
-                ->orLike('description', $search);
-            $regionModel->groupEnd();
-        }
-
-        $regions = $regionModel->findAll();
-
-        // Her bölgeye unit_name ve structure_name ekle
-        foreach ($regions as &$region) {
-            $region['unit_name'] = $unitNames[$region['unit_id']] ?? 'Bilinmeyen Birim';
-            $region['structure_name'] = $structureNames[$region['structure_id']] ?? 'Bilinmeyen Yapı';
-        }
-        unset($region); // Referans hatası olmaması için
-
-        // Logo dosya yolunu belirle
-        $logoPath = FCPATH . $settingsModel->getSettings()['site_logo'];
-        $logoBase64 = '';
-
-        if (file_exists($logoPath)) {
-            $logoData = file_get_contents($logoPath);
-            $logoBase64 = 'data:image/png;base64,' . base64_encode($logoData);
-        } else {
-            $logoBase64 = ''; // Eğer logo yoksa boş bırak
-        }
-
-        $data = [
-            'settings' => $settingsModel->getSettings(),
-            'user' => $userModel->getUser(),
-            'units' => $units,
-            'structures' => $structures,
-            'regions' => $regions,
-            'logoBase64' => $logoBase64,
-        ];
-
-        return view('admin/pages/schools/region', $data);
+    // Birim ve Yapı adlarını ID ile eşleştir
+    $unitNames = [];
+    foreach ($units as $unit) {
+        $unitNames[$unit['id']] = $unit['name'];
     }
+
+    $structureNames = [];
+    foreach ($structures as $structure) {
+        $structureNames[$structure['id']] = $structure['name'];
+    }
+
+    // GET üzerinden filtre parametrelerini al
+    $search = $this->request->getGet('search');
+    $unitFilter = $this->request->getGet('unit_filter');
+    $structureFilter = $this->request->getGet('structure_filter');
+
+    // **Şirkete ait bölgeleri filtreleme** - 🔥 **EKLENEN FİLTRE**
+    $regionModel->where('company_id', $companyId);
+
+    // Bölgeleri yalnızca şirketin aktif birim ve yapılarıyla sınırla
+    if (!empty($unitIds) && !empty($structureIds)) {
+        $regionModel->whereIn('unit_id', $unitIds)
+            ->whereIn('structure_id', $structureIds);
+    } elseif (!empty($unitIds)) {
+        $regionModel->whereIn('unit_id', $unitIds);
+    } elseif (!empty($structureIds)) {
+        $regionModel->whereIn('structure_id', $structureIds);
+    }
+
+    $regionModel->where('deleted_at', null); // ✅ Silinmiş bölgeleri liste dışı bırak
+
+    if (!empty($unitFilter)) {
+        $regionModel->where('unit_id', $unitFilter);
+    }
+    if (!empty($structureFilter)) {
+        $regionModel->where('structure_id', $structureFilter);
+    }
+    if (!empty($search)) {
+        // Bölge ismi veya açıklaması üzerinden arama
+        $regionModel->groupStart();
+        $regionModel->like('name', $search)
+            ->orLike('description', $search);
+        $regionModel->groupEnd();
+    }
+
+    $regions = $regionModel->findAll();
+
+    // Her bölgeye unit_name ve structure_name ekle
+    foreach ($regions as &$region) {
+        $region['unit_name'] = $unitNames[$region['unit_id']] ?? 'Bilinmeyen Birim';
+        $region['structure_name'] = $structureNames[$region['structure_id']] ?? 'Bilinmeyen Yapı';
+    }
+    unset($region); // Referans hatası olmaması için
+
+    // Logo dosya yolunu belirle
+    $logoPath = FCPATH . $settingsModel->getSettings()['site_logo'];
+    $logoBase64 = '';
+
+    if (file_exists($logoPath)) {
+        $logoData = file_get_contents($logoPath);
+        $logoBase64 = 'data:image/png;base64,' . base64_encode($logoData);
+    } else {
+        $logoBase64 = ''; // Eğer logo yoksa boş bırak
+    }
+
+    $data = [
+        'settings' => $settingsModel->getSettings(),
+        'user' => $userModel->getUser(),
+        'units' => $units,
+        'structures' => $structures,
+        'regions' => $regions,
+        'logoBase64' => $logoBase64,
+    ];
+
+    return view('admin/pages/schools/region', $data);
+}
+
 
 
 
