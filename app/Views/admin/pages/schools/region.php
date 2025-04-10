@@ -138,7 +138,14 @@
                                     </button>
                                     <!-- PDF İndir Butonu: Tekil PDF oluşturur -->
                                     <button type="button"
-                                        onclick="generatePDF('<?= $region['id'] ?>', '<?= $region['name'] ?>', '<?= $region['unit_name'] ?>', '<?= $region['structure_name'] ?>')"
+                                       onclick="generatePDF(
+    '<?= $region['id'] ?>', 
+    '<?= $region['name'] ?>',
+    '<?= $region['unit_name'] ?>',
+    '<?= $region['description'] ?>',
+    '<?= $region['structure_name'] ?>'
+)"
+
                                         class="btn btn-primary btn-sm">
                                         <i class="fas fa-file-pdf"></i> PDF İndir
                                     </button>
@@ -225,6 +232,8 @@
     var regionsData = <?= json_encode($regions) ?>;
     // logoBase64: Logonun base64 kodlu verisi
     var logoBase64 = "<?= $logoBase64 ?>";
+  var logo2Base64 = "<?= $logo2Base64 ?>";
+
 </script>
 
 <?= $this->section('javascript') ?>
@@ -277,7 +286,8 @@
 
 <!-- Tekil PDF oluşturma fonksiyonu: Belirtilen bölge için PDF oluşturur -->
 <script>
-    function generatePDF(regionId, regionName, unitName, structureName) {
+
+    function generatePDF(regionId, regionName, unitName,description, structureName) {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         // Roboto fontunu ekliyoruz (Türkçe karakter desteği için)
@@ -292,6 +302,10 @@
         if (logoBase64) {
             // Logoyu PDF'ye ekler
             doc.addImage(logoBase64, "PNG", 15, 15, 40, 30);
+            
+            // Aynı logoyu sağ üst köşeye ekler (sayfa genişliği 210mm, sağdan 15mm boşluk kalacak şekilde)
+            doc.addImage(logo2Base64, "PNG", 155, 15, 40, 30);
+            
         }
         doc.setFontSize(22);
         doc.setFont("Roboto");
@@ -301,6 +315,11 @@
         doc.text(`Birim: ${unitName}`, 20, 50);
         doc.text(`Bina: ${structureName}`, 20, 60);
         doc.text(`Bölge: ${regionName}`, 20, 70);
+        
+    // Açıklamayı satırlara bölerek yazdır
+  
+
+        
         // QR kodu oluşturmak için geçici bir canvas kullanılır
         let qrCanvas = document.createElement("canvas");
         let qrCode = new QRCode(qrCanvas, {
@@ -308,12 +327,43 @@
             width: 100,
             height: 100
         });
+       
         setTimeout(() => {
             let qrImage = qrCanvas.querySelector("img");
             if (qrImage) {
                 let imgData = qrImage.src;
                 doc.addImage(imgData, "PNG", 75, 100, 60, 60);
             }
+            
+            
+// =======================================================================
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+        // Açıklama yazısını yazdır: QR altı = 200
+        doc.setFontSize(16);
+
+        const maxWidth = 160;
+        const lineHeight = 8;
+        const startY = 200;
+        const descLines = doc.splitTextToSize(description, maxWidth);
+        let y = startY;
+
+        descLines.forEach((line, index) => {
+            if (y + lineHeight > pageHeight - 10) {
+                doc.addPage();
+                y = 20;
+            }
+            const textWidth = doc.getTextWidth(line);
+            const x = (pageWidth - textWidth) / 2;
+            doc.text(line, x, y);
+            y += lineHeight;
+        });
+
+
+
+// =======================================================================
+            
             // Tekil PDF dosyası ismi, bölge ismine göre oluşturulur
             doc.save(`Bölge_${regionName}.pdf`);
         }, 1000);
@@ -340,6 +390,9 @@
             }
             if (logoBase64) {
                 doc.addImage(logoBase64, "PNG", 15, 15, 40, 30);
+                
+                // Aynı logoyu sağ üst köşeye ekler (sayfa genişliği 210mm, sağdan 15mm boşluk kalacak şekilde)
+                doc.addImage(logo2Base64, "PNG", 155, 15, 40, 30);
             }
             doc.setFontSize(22);
             doc.setFont("Roboto");
@@ -349,11 +402,37 @@
             doc.text(`Birim: ${region.unit_name}`, 20, 50);
             doc.text(`Bina: ${region.structure_name}`, 20, 60);
             doc.text(`Bölge: ${region.name}`, 20, 70);
+            
             // Her bölge için asenkron QR kod oluşturulur ve eklenir
             let qrImgData = await generateQR(region.id);
             if (qrImgData) {
                 doc.addImage(qrImgData, "PNG", 75, 100, 60, 60);
+                
+              
             }
+// =======================================================================
+
+doc.setFontSize(16);
+
+const maxWidth = 160;
+const lineHeight = 8;
+const startY = 200;
+const descLines = doc.splitTextToSize(region.description, maxWidth);
+let y = startY;
+
+descLines.forEach((line) => {
+    if (y + lineHeight > doc.internal.pageSize.getHeight() - 10) {
+        doc.addPage();
+        y = 20;
+    }
+    const textWidth = doc.getTextWidth(line);
+    const x = (doc.internal.pageSize.getWidth() - textWidth) / 2;
+    doc.text(line, x, y);
+    y += lineHeight;
+});
+
+
+// =======================================================================
         }
         // Dosya adı için varsayılan olarak "Tüm Birimler" ve "Tüm Binalar" kullanılacak
         let unitText = <?= json_encode(request()->getGet('unit_filter') ? request()->getGet('unit_filter') : "Tüm_Birimler") ?>;

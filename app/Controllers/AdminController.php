@@ -268,6 +268,10 @@ class AdminController extends BaseController
         // Resim yükleme işlemi
         $image = $this->request->getFile('image');
         if ($image && $image->isValid() && !$image->hasMoved()) {
+            $fileType = $image->getMimeType();
+            if (!in_array($fileType, ['image/jpeg', 'image/png', 'image/gif'])) {
+                return redirect()->back()->withInput()->with('error', 'Yüklediğiniz dosya bir resim olmalıdır (JPEG, PNG, GIF).');
+            }
             $newName = $image->getRandomName();
             $uploadPath =  'uploads/notifications/';
 

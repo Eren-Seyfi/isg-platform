@@ -8,6 +8,7 @@ use App\Models\UserModel;
 use App\Models\UnitModel;
 use App\Models\StructureModel;
 use App\Models\RegionModel;
+use App\Models\CompanyModel;
 
 class SchoolsController extends BaseController
 {
@@ -18,38 +19,47 @@ class SchoolsController extends BaseController
 
     // ============================= Birim (Unit) İşlemleri =============================
 
-    public function getUnits()
-    {
-        $unitModel = new UnitModel();
-        $settingsModel = new SettingsModel();
-        $userModel = new UserModel();
+  public function getUnits()
+{
+    $unitModel = new UnitModel();
+    $settingsModel = new SettingsModel();
+    $userModel = new UserModel();
 
-        $company_id = session()->get('company_id'); // Kullanıcının şirket ID'sini al
+    $companyId = session()->get('company_id'); // Kullanıcının şirket ID'sini al
 
-        // GET üzerinden gelen arama terimini al
-        $search = $this->request->getGet('search');
-
-        // Query Builder kullanarak şirket filtrelemesi ve arama koşullarını ekleyelim
-        $builder = $unitModel->builder();
-        $builder->where('deleted_at IS NULL'); // ❌ Silinen verileri hariç tut
-        $builder->where('company_id', $company_id);
-        if (!empty($search)) {
-            $builder->groupStart();
-            $builder->like('name', $search)
-                ->orLike('phone', $search)
-                ->orLike('description', $search);
-            $builder->groupEnd();
-        }
-        $units = $builder->get()->getResultArray();
-
-        $data = [
-            'settings' => $settingsModel->getSettings(),
-            'user' => $userModel->getUser(),
-            'units' => $units,
-        ];
-
-        return view('admin/pages/schools/unit', $data);
+    // company_id boşsa işlem yapma
+    if (empty($companyId)) {
+        return redirect()->back()->with('error', 'Şirket ID bulunamadı.');
     }
+
+    // GET üzerinden gelen arama terimini al
+    $search = $this->request->getGet('search');
+
+    // Query Builder kullanarak şirket filtrelemesi ve arama koşullarını ekleyelim
+    $builder = $unitModel->builder();
+    $builder->where('company_id', $companyId)
+            ->where('deleted_at', null); // ✅ Silinen verileri hariç tut
+
+    // Arama sorgusu varsa filtre uygula
+    if (!empty($search)) {
+        $builder->groupStart();
+        $builder->like('name', $search)
+            ->orLike('phone', $search)
+            ->orLike('description', $search);
+        $builder->groupEnd();
+    }
+
+    $units = $builder->get()->getResultArray();
+
+    $data = [
+        'settings' => $settingsModel->getSettings(),
+        'user' => $userModel->getUser(),
+        'units' => $units,
+    ];
+
+    return view('admin/pages/schools/unit', $data);
+}
+
 
     public function createUnit()
     {
@@ -97,63 +107,65 @@ class SchoolsController extends BaseController
 
     // ============================= Bina (Structure) İşlemleri =============================
 
-    public function getStructures()
-    {
-        $settingsModel = new SettingsModel();
-        $userModel = new UserModel();
-        $unitModel = new UnitModel();
-        $structureModel = new StructureModel();
+   public function getStructures()
+{
+    $settingsModel = new SettingsModel();
+    $userModel = new UserModel();
+    $unitModel = new UnitModel();
+    $structureModel = new StructureModel();
 
-        $companyId = session()->get('company_id'); // Kullanıcının şirket ID'sini al
+    $companyId = session()->get('company_id'); // Kullanıcının şirket ID'sini al
 
-        // Şirkete ait aktif birimleri getiriyoruz.
-        $units = $unitModel->where('company_id', $companyId)
-            ->where('deleted_at IS NULL') // ❌ Silinmiş birimleri hariç tut
-            ->findAll();
+    // Şirkete ait aktif birimleri getiriyoruz.
+    $units = $unitModel->where('company_id', $companyId)
+        ->where('deleted_at', null) // ✅ Silinmiş birimleri hariç tut
+        ->findAll();
 
-        if (empty($units)) {
-            return redirect()->back()->with('error', 'Bu şirkete ait birim bulunamadı.');
-        }
+    $unitIds = array_column($units, 'id');
 
-        $unitIds = array_column($units, 'id');
+    // GET üzerinden arama ve birim filtre parametrelerini alıyoruz.
+    $search = $this->request->getGet('search');
+    $unitFilter = $this->request->getGet('unit_filter');
 
-        // GET üzerinden arama ve birim filtre parametrelerini alıyoruz.
-        $search = $this->request->getGet('search');
-        $unitFilter = $this->request->getGet('unit_filter');
+    // Query Builder kullanarak join işlemi gerçekleştiriyoruz.
+    $builder = $structureModel->builder();
+    $builder->select('structure.*, unit.name as unit_name')
+        ->join('unit', 'unit.id = structure.unit_id', 'left')
+        ->where('unit.company_id', $companyId) // 🔥 **Şirket ID'sine göre filtre**
+        ->where('structure.deleted_at', null) // ✅ Silinmiş yapıları hariç tut
+        ->where('unit.deleted_at', null); // ✅ Silinmiş birimleri de filtrele
 
-        // Query Builder kullanarak join işlemi gerçekleştiriyoruz.
-        $builder = $structureModel->builder();
-        $builder->select('structure.*, unit.name as unit_name')
-            ->join('unit', 'unit.id = structure.unit_id', 'left')
-            ->whereIn('structure.unit_id', $unitIds)
-            ->where('structure.deleted_at IS NULL') // ❌ Silinmiş yapıları hariç tut
-            ->where('unit.deleted_at IS NULL'); // ❌ Silinmiş birimleri de filtrele
-
-        // Metin araması için filtre
-        if (!empty($search)) {
-            $builder->groupStart();
-            $builder->like('structure.name', $search)
-                ->orLike('structure.description', $search)
-                ->orLike('unit.name', $search);
-            $builder->groupEnd();
-        }
-
-        // Birim seçimine göre filtre
-        if (!empty($unitFilter)) {
-            $builder->where('structure.unit_id', $unitFilter);
-        }
-
-        $structures = $builder->get()->getResultArray();
-
-        $data = [
-            'settings' => $settingsModel->getSettings(),
-            'user' => $userModel->getUser(),
-            'units' => $units,       // View'a gönderilecek birimler
-            'structures' => $structures,
-        ];
-
-        return view('admin/pages/schools/structure', $data);
+    // Eğer `$unitIds` boş değilse whereIn uygula
+    if (!empty($unitIds)) {
+        $builder->whereIn('structure.unit_id', $unitIds);
     }
+
+    // Metin araması için filtre
+    if (!empty($search)) {
+        $builder->groupStart();
+        $builder->like('structure.name', $search)
+            ->orLike('structure.description', $search)
+            ->orLike('unit.name', $search);
+        $builder->groupEnd();
+    }
+
+    // Birim seçimine göre filtre
+    if (!empty($unitFilter)) {
+        $builder->where('structure.unit_id', $unitFilter);
+    }
+
+    $structures = $builder->get()->getResultArray();
+
+    $data = [
+        'settings' => $settingsModel->getSettings(),
+        'user' => $userModel->getUser(),
+        'units' => $units,       // View'a gönderilecek birimler
+        'structures' => $structures,
+    ];
+
+    return view('admin/pages/schools/structure', $data);
+}
+
 
 
     public function createStructure()
@@ -205,94 +217,125 @@ class SchoolsController extends BaseController
 
     // ============================= Bölge (Region) İşlemleri =============================
 
-    public function getRegions()
-    {
-        $settingsModel = new SettingsModel();
-        $userModel = new UserModel();
-        $unitModel = new UnitModel();
-        $structureModel = new StructureModel();
-        $regionModel = new RegionModel();
+ public function getRegions()
+{
+    $settingsModel = new SettingsModel();
+    $userModel = new UserModel();
+    $unitModel = new UnitModel();
+    $structureModel = new StructureModel();
+    $regionModel = new RegionModel();
 
-        $companyId = session()->get('company_id'); // Kullanıcının şirket ID’sini al
+    $companyId = session()->get('company_id'); // Kullanıcının şirket ID’sini al
 
-        // Şirkete ait aktif birimleri çek
-        $units = $unitModel->where('company_id', $companyId)
-            ->where('deleted_at IS NULL') // ❌ Silinmiş birimleri liste dışı bırak
-            ->findAll();
+    // Şirkete ait aktif birimleri çek
+    $units = $unitModel->where('company_id', $companyId)
+        ->where('deleted_at', null) // ✅ Silinmiş birimleri liste dışı bırak
+        ->findAll();
 
-        // Şirkete ait aktif yapıları çek
-        $structures = $structureModel->where('company_id', $companyId)
-            ->where('deleted_at IS NULL') // ❌ Silinmiş yapıları liste dışı bırak
-            ->findAll();
+    // Şirkete ait aktif yapıları çek
+    $structures = $structureModel->where('company_id', $companyId)
+        ->where('deleted_at', null) // ✅ Silinmiş yapıları liste dışı bırak
+        ->findAll();
 
-        $unitIds = array_column($units, 'id');
-        $structureIds = array_column($structures, 'id');
+    $unitIds = array_column($units, 'id');
+    $structureIds = array_column($structures, 'id');
 
-        // Birim ve Yapı adlarını ID ile eşleştir
-        $unitNames = [];
-        foreach ($units as $unit) {
-            $unitNames[$unit['id']] = $unit['name'];
-        }
-        $structureNames = [];
-        foreach ($structures as $structure) {
-            $structureNames[$structure['id']] = $structure['name'];
-        }
-
-        // GET üzerinden filtre parametrelerini al
-        $search = $this->request->getGet('search');
-        $unitFilter = $this->request->getGet('unit_filter');
-        $structureFilter = $this->request->getGet('structure_filter');
-
-        // Bölgeleri yalnızca kullanıcının şirketine ait olanlarla sınırlayarak al ve filtre uygula
-        $regionModel->whereIn('unit_id', $unitIds)
-            ->whereIn('structure_id', $structureIds)
-            ->where('deleted_at IS NULL'); // ❌ Silinmiş bölgeleri liste dışı bırak
-
-        if (!empty($unitFilter)) {
-            $regionModel->where('unit_id', $unitFilter);
-        }
-        if (!empty($structureFilter)) {
-            $regionModel->where('structure_id', $structureFilter);
-        }
-        if (!empty($search)) {
-            // Bölge ismi veya açıklaması üzerinden arama
-            $regionModel->groupStart();
-            $regionModel->like('name', $search)
-                ->orLike('description', $search);
-            $regionModel->groupEnd();
-        }
-
-        $regions = $regionModel->findAll();
-
-        // Her bölgeye unit_name ve structure_name ekle
-        foreach ($regions as &$region) {
-            $region['unit_name'] = $unitNames[$region['unit_id']] ?? 'Bilinmeyen Birim';
-            $region['structure_name'] = $structureNames[$region['structure_id']] ?? 'Bilinmeyen Yapı';
-        }
-        unset($region); // Referans hatası olmaması için
-
-        // Logo dosya yolunu belirle
-        $logoPath = FCPATH . $settingsModel->getSettings()['site_logo'];
-        $logoBase64 = '';
-
-        if (file_exists($logoPath)) {
-            $logoData = file_get_contents($logoPath);
-            $logoBase64 = 'data:image/png;base64,' . base64_encode($logoData);
-        } else {
-            $logoBase64 = ''; // Eğer logo yoksa boş bırak
-        }
-
-        $data = [
-            'settings' => $settingsModel->getSettings(),
-            'user' => $userModel->getUser(),
-            'units' => $units,
-            'structures' => $structures,
-            'regions' => $regions,
-            'logoBase64' => $logoBase64,
-        ];
-
-        return view('admin/pages/schools/region', $data);
+    // Birim ve Yapı adlarını ID ile eşleştir
+    $unitNames = [];
+    foreach ($units as $unit) {
+        $unitNames[$unit['id']] = $unit['name'];
     }
+
+    $structureNames = [];
+    foreach ($structures as $structure) {
+        $structureNames[$structure['id']] = $structure['name'];
+    }
+
+    // GET üzerinden filtre parametrelerini al
+    $search = $this->request->getGet('search');
+    $unitFilter = $this->request->getGet('unit_filter');
+    $structureFilter = $this->request->getGet('structure_filter');
+
+    // **Şirkete ait bölgeleri filtreleme** - 🔥 **EKLENEN FİLTRE**
+    $regionModel->where('company_id', $companyId);
+
+    // Bölgeleri yalnızca şirketin aktif birim ve yapılarıyla sınırla
+    if (!empty($unitIds) && !empty($structureIds)) {
+        $regionModel->whereIn('unit_id', $unitIds)
+            ->whereIn('structure_id', $structureIds);
+    } elseif (!empty($unitIds)) {
+        $regionModel->whereIn('unit_id', $unitIds);
+    } elseif (!empty($structureIds)) {
+        $regionModel->whereIn('structure_id', $structureIds);
+    }
+
+    $regionModel->where('deleted_at', null); // ✅ Silinmiş bölgeleri liste dışı bırak
+
+    if (!empty($unitFilter)) {
+        $regionModel->where('unit_id', $unitFilter);
+    }
+    if (!empty($structureFilter)) {
+        $regionModel->where('structure_id', $structureFilter);
+    }
+    if (!empty($search)) {
+        // Bölge ismi veya açıklaması üzerinden arama
+        $regionModel->groupStart();
+        $regionModel->like('name', $search)
+            ->orLike('description', $search);
+        $regionModel->groupEnd();
+    }
+
+    $regions = $regionModel->findAll();
+
+    // Her bölgeye unit_name ve structure_name ekle
+    foreach ($regions as &$region) {
+        $region['unit_name'] = $unitNames[$region['unit_id']] ?? 'Bilinmeyen Birim';
+        $region['structure_name'] = $structureNames[$region['structure_id']] ?? 'Bilinmeyen Yapı';
+    }
+    unset($region); // Referans hatası olmaması için
+
+    // Logo dosya yolunu belirle
+    $logoPath = FCPATH . $settingsModel->getSettings()['site_logo'];
+    $logoBase64 = '';
+
+    if (file_exists($logoPath)) {
+        $logoData = file_get_contents($logoPath);
+        $logoBase64 = 'data:image/png;base64,' . base64_encode($logoData);
+    } else {
+        $logoBase64 = ''; // Eğer logo yoksa boş bırak
+    }
+
+        // ==================================================================================================================================
+// Firma Logo dosya yolunu belirle
+$companyModel = new CompanyModel();
+$company = $companyModel->find(session()->get('company_id'));
+
+$logo2Path = FCPATH . $company['image'];
+$logo2Base64 = ''; // <-- BURADA ÖNCEDEN TANIMLA
+
+if (file_exists($logo2Path)) {
+    $logoData = file_get_contents($logo2Path);
+    $logo2Base64 = 'data:image/png;base64,' . base64_encode($logoData);
+}
+
+
+        // ==================================================================================================================================
+
+
+
+    $data = [
+        'settings' => $settingsModel->getSettings(),
+        'user' => $userModel->getUser(),
+        'units' => $units,
+        'structures' => $structures,
+        'regions' => $regions,
+        'logoBase64' => $logoBase64,
+        'logo2Base64' => $logo2Base64,
+    ];
+
+    return view('admin/pages/schools/region', $data);
+}
+
 
 
 

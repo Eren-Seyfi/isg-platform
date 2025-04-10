@@ -178,6 +178,4 @@ class ExcelController extends BaseController
             return $this->response->setJSON(["message" => "Excel okunurken hata oluştu.", "error" => $e->getMessage()])->setStatusCode(500);
         }
     }
-
-
 }

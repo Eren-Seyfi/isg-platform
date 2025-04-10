@@ -246,7 +246,4 @@ class PdfController extends Controller
 
         return $this->response->setHeader('Content-Type', 'application/pdf')->setHeader('Content-Disposition', 'attachment; filename="risk_raporu.pdf"')->setBody($dompdf->output());
     }
-
-
-
 }
